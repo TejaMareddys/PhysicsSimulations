@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Capacitor Circuit Simulation</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      background: white;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.5;
+    }
+
+    h1 {
+      font-weight: 700;
+      font-size: 2.7rem;
+      color: #00c2ff;
+      text-shadow: 0 0 12px #00c2ff;
+      margin-bottom: 48px;
+      text-align: center;
+      letter-spacing: 0.03em;
+    }
+
+    .container {
+      background: #1e1e1e;
+      border-radius: 14px;
+      box-shadow:
+        0 0 16px #00c2ff,
+        inset 0 0 10px #e3ac0040;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 36px;
+      padding: 32px;
+      width: 100%;
+      max-width: 900px;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 44px;
+    }
+
+    .circuit-diagram {
+      background: #292929;
+      border-radius: 14px;
+      padding: 32px 45px;
+      box-shadow: 0 0 24px #00c2ff;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 44px;
+      user-select: none;
+    }
+
+    .bar {
+      width: 28px;
+      height: 140px;
+      background: #333;
+      border-radius: 14px;
+      overflow: hidden;
+      position: relative;
+      box-shadow: inset 0 0 14px #000;
+      flex-shrink: 0;
+    }
+
+    .bar-fill {
+      width: 100%;
+      position: absolute;
+      bottom: 0;
+      background: linear-gradient(180deg, green, green);
+      box-shadow: 0 5px 14px green;
+      transition: height 0.25s ease-out;
+      border-radius: 14px 14px 0 0;
+    }
+
+    .resistor-bar-fill {
+      background: linear-gradient(180deg, #00c2ff, #006a9c);
+      box-shadow: 0 5px 14px #00c2ffcc;
+    }
+
+    .bar + span {
+      font-weight: 900;
+      font-size: 2rem;
+      color: #00c2ff;
+      user-select: none;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+      width: 100%;
+    }
+
+    button {
+      flex: 1 1 140px;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 14px;
+      background: #6e7f99;
+      color: #121212;
+      font-weight: 700;
+      font-size: 1.2rem;
+      cursor: pointer;
+      box-shadow: 0 0 18px #00c2ff;
+      transition:
+        background-color 0.25s ease,
+        box-shadow 0.25s ease,
+        transform 0.15s ease;
+      user-select: none;
+      text-align: center;
+      letter-spacing: 0.025em;
+    }
+
+    button:hover:not(#resetBtn) {
+      background-color: #00c2ff;
+      box-shadow: 0 0 24px #00c2ff;
+      transform: translateY(-2.5px);
+      color: #fff;
+    }
+
+    button:active:not(#resetBtn) {
+      transform: translateY(0);
+      box-shadow: 0 0 12px #b0780088;
+    }
+
+    button#resetBtn {
+      background-color: #6e7f99;
+      color: #121212;
+      box-shadow: 0 0 16px #00c2ff;
+      font-weight: 600;
+    }
+
+    button#resetBtn:hover {
+      background-color: #00c2ff;
+      box-shadow: 0 0 24px #00c2ff;
+      transform: translateY(-1.5px);
+      color: #121212;
+    }
+
+    button.active:not(#resetBtn) {
+      background-color: #00c2ff !important;
+      box-shadow: 0 0 24px #00c2ff !important;
+      color: #fff !important;
+    }
+
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+    }
+
+    canvas {
+      background: #292929;
+      border-radius: 16px;
+      box-shadow: 0 0 24px #00c2ff;
+      padding: 20px;
+      width: 100% !important;
+      height: 290px !important;
+      user-select: none;
+    }
+
+    @media (max-width: 800px) {
+      .container {
+        grid-template-columns: 1fr;
+        padding: 28px 16px;
+      }
+      .left-panel {
+        gap: 32px;
+      }
+      .controls {
+        flex-direction: column;
+      }
+      button {
+        flex: none;
+        width: 100%;
+      }
+      canvas {
+        height: 210px !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Capacitor Circuit Simulation</h1>
+
+  <div class="container">
+    <div class="left-panel">
+      <div class="circuit-diagram" aria-label="Capacitor and Resistor bars">
+        <div class="bar" aria-label="Capacitor charge level">
+          <div id="capacitorBar" class="bar-fill" style="height: 0%;"></div>
+        </div>
+        <span aria-hidden="true">||</span>
+        <div class="bar" aria-label="Resistor current level">
+          <div id="resistorBar" class="bar-fill resistor-bar-fill" style="height: 100%;"></div>
+        </div>
+      </div>
+
+      <div class="controls" role="group" aria-label="Simulation controls">
+        <button id="startBtn" onclick="handleButtonClick('start')">Start</button>
+        <button id="pauseBtn" onclick="handleButtonClick('pause')">Pause</button>
+        <button id="resetBtn" onclick="handleReset()">Reset</button>
+        <button id="slowBtn" onclick="handleButtonClick('slow')">Slow</button>
+        <button id="dischargeBtn" onclick="handleButtonClick('discharge')">Toggle Discharge</button>
+
+        <!-- New inputs for R, C, V -->
+        <div style="width: 100%; margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+          <label style="color: #00c2ff; font-weight: 700;">
+            R (Ω):
+            <input id="inputR" type="number" min="1" step="1" value="1000" style="width: 80px; border-radius: 6px; border: none; padding: 6px;" />
+          </label>
+          <label style="color: #00c2ff; font-weight: 700;">
+            C (F):
+            <input id="inputC" type="number" min="0.000001" step="0.000001" value="0.001" style="width: 80px; border-radius: 6px; border: none; padding: 6px;" />
+          </label>
+          <label style="color: #00c2ff; font-weight: 700;">
+            V (Volts):
+            <input id="inputV" type="number" min="0.1" step="0.1" value="5" style="width: 80px; border-radius: 6px; border: none; padding: 6px;" />
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <canvas id="chargeChart" width="540" height="290" aria-label="Charge on Capacitor Chart"></canvas>
+      <canvas id="currentChart" width="540" height="290" aria-label="Current Through Resistor Chart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    let R = 1000; // ohms
+    let C = 0.001; // farads
+    let V = 5; // volts
+    let Qmax = V * C; // coulombs
+    let timeConstant = R * C;
+
+    let time = 0;
+    let charging = true;
+    let running = false;
+    let interval;
+
+    let chargeData = [];
+    let currentData = [];
+    let labels = [];
+
+    const capacitorBar = document.getElementById("capacitorBar");
+    const resistorBar = document.getElementById("resistorBar");
+
+    const chargeChart = new Chart(document.getElementById("chargeChart").getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Charge on Capacitor (C)",
+          data: chargeData,
+          borderColor: "green",
+          fill: false,
+          tension: 0.3,
+          pointRadius: 0,
+        }]
+      },
+      options: {
+        animation: false,
+        responsive: false,
+        scales: {
+          x: { title: { display: true, text: "Time (s)" } },
+          y: { title: { display: true, text: "Charge (C)" }, min: 0, max: Qmax }
+        }
+      }
+    });
+
+    const currentChart = new Chart(document.getElementById("currentChart").getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Current Through Resistor (A)",
+          data: currentData,
+          borderColor: "#00c2ff",
+          fill: false,
+          tension: 0.3,
+          pointRadius: 0,
+        }]
+      },
+      options: {
+        animation: false,
+        responsive: false,
+        scales: {
+          x: { title: { display: true, text: "Time (s)" } },
+          y: {
+            title: { display: true, text: "Current (A)" },
+            min: -V / R,
+            max: V / R
+          }
+        }
+      }
+    });
+
+    let dt = 0.1; // default time step
+    let slowMotion = false;
+
+    function updateSimulation() {
+      time += dt;
+      let q, i;
+
+      if (charging) {
+        q = Qmax * (1 - Math.exp(-time / timeConstant));
+        i = (V / R) * Math.exp(-time / timeConstant);
+      } else {
+        q = Qmax * Math.exp(-time / timeConstant);
+        i = - (V / R) * Math.exp(-time / timeConstant);
+      }
+
+      labels.push(time.toFixed(2));
+      chargeData.push(q);
+      currentData.push(i);
+
+      chargeChart.update();
+      currentChart.update();
+
+      capacitorBar.style.height = `${(q / Qmax) * 100}%`;
+      resistorBar.style.height = `${(Math.abs(i) / (V / R)) * 100}%`;
+    }
+
+    function startSimulation() {
+      if (!running) {
+        interval = setInterval(updateSimulation, 100);
+        running = true;
+      }
+    }
+
+    function pauseSimulation() {
+      clearInterval(interval);
+      running = false;
+    }
+
+    function resetSimulation() {
+      pauseSimulation();
+      time = 0;
+      chargeData.length = 0;
+      currentData.length = 0;
+      labels.length = 0;
+      chargeChart.update();
+      currentChart.update();
+      capacitorBar.style.height = "0%";
+      resistorBar.style.height = "100%";
+    }
+
+    function toggleDischarge() {
+      resetSimulation();
+      charging = !charging;
+    }
+
+    function toggleSlowMotion() {
+      slowMotion = !slowMotion;
+      dt = slowMotion ? 0.02 : 0.1;
+    }
+
+    function handleButtonClick(button) {
+      if (button === "start") {
+        startSimulation();
+      } else if (button === "pause") {
+        pauseSimulation();
+      } else if (button === "slow") {
+        toggleSlowMotion();
+      } else if (button === "discharge") {
+        toggleDischarge();
+      }
+
+      const buttonsToToggle = ["startBtn", "pauseBtn", "slowBtn", "dischargeBtn"];
+      buttonsToToggle.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn.id === button + "Btn") {
+          btn.classList.add("active");
+        } else {
+          btn.classList.remove("active");
+        }
+      });
+    }
+
+    function handleReset() {
+      resetSimulation();
+      ["startBtn", "pauseBtn", "slowBtn", "dischargeBtn"].forEach(id => {
+        document.getElementById(id).classList.remove("active");
+      });
+      document.getElementById("startBtn").classList.remove("active");
+    }
+
+    function updateParameters() {
+      R = parseFloat(document.getElementById("inputR").value);
+      C = parseFloat(document.getElementById("inputC").value);
+      V = parseFloat(document.getElementById("inputV").value);
+
+      Qmax = V * C;
+      timeConstant = R * C;
+
+      chargeChart.options.scales.y.max = Qmax;
+      currentChart.options.scales.y.max = V / R;
+      currentChart.options.scales.y.min = -V / R;
+
+      chargeChart.update();
+      currentChart.update();
+
+      resetSimulation();
+    }
+
+    document.getElementById("inputR").addEventListener("change", updateParameters);
+    document.getElementById("inputC").addEventListener("change", updateParameters);
+    document.getElementById("inputV").addEventListener("change", updateParameters);
+  </script>
+</body>
+</html>

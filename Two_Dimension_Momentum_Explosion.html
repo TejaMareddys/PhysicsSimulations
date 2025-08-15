@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>2D Momentum Explosion Simulation</title>
+  <style>
+    body {
+      background: white;
+      color: #eee;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      height: 100vh;
+      justify-content: flex-start;
+      user-select: none;
+      padding: 20px;
+    }
+    h1 {
+      color: #00c2ff;
+      margin-bottom: 16px;
+      text-shadow: 0 0 10px #00c2ff;
+      text-align: center;
+    }
+    canvas {
+      background: #292929;
+      border-radius: 10px;
+      box-shadow: 0 0 20px #00c2ff;
+      margin-bottom: 20px;
+    }
+    #controls {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 12px;
+    }
+    button {
+      background: #00c2ff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      color: #121212;
+      box-shadow: 0 0 8px #00c2ff;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background: #0099dd;
+    }
+    #stats {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: nowrap;
+      overflow-x: visible;
+    }
+    .particle-stats {
+      background: #1e1e1e;
+      border-radius: 10px;
+      box-shadow: 0 0 12px #00c2ffaa;
+      padding: 16px;
+      width: 220px;
+      font-size: 14px;
+      line-height: 1.4;
+      flex-shrink: 0;
+      border-left: 6px solid transparent;
+    }
+    .particle-stats h2 {
+      margin-top: 0;
+      font-size: 18px;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .stat-row span:first-child {
+      color: #8ac7ff;
+    }
+  </style>
+</head>
+<body>
+  <h1>2D Momentum Explosion Simulation</h1>
+
+  <div id="problem-box" style="background:#1e1e1e;padding:12px;margin-bottom:20px;border-radius:10px;box-shadow:0 0 12px #00c2ffaa;width:680px;">
+    <div id="given-data" style="margin-bottom:10px;"></div>
+  </div>
+
+  <canvas id="canvas" width="700" height="500" aria-label="Momentum explosion simulation"></canvas>
+  <div id="controls">
+    <button id="startBtn">Start Explosion</button>
+    <button id="pauseBtn" disabled>Pause</button>
+    <button id="slowBtn">Slow: OFF</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div id="stats" aria-live="polite" aria-atomic="true">
+    <!-- Stats for each particle inserted here -->
+  </div>
+
+  <script>
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+
+    let particles = [];
+    let animationId = null;
+    let running = false;
+    let paused = false;
+    let slowMode = false;
+
+    const colors = [
+      { fill: "#3399ff", velocity: "#66b2ff", momentum: "#ff6666", accent: "#3399ff" },
+      { fill: "#33cc33", velocity: "#66ff66", momentum: "#ff9966", accent: "#33cc33" },
+      { fill: "#ff9933", velocity: "#ffcc66", momentum: "#ff6666", accent: "#ff9933" }
+    ];
+
+    class Particle {
+      constructor(x, y, mass, vx, vy, id, colorSet) {
+        this.x = x;
+        this.y = y;
+        this.mass = mass;
+        this.vx = vx;
+        this.vy = vy;
+        this.radius = 10 + mass * 4;
+        this.id = id;
+        this.ax = 0;
+        this.ay = 0;
+        this.colorSet = colorSet;
+        this.shapePoints = this.generateShrapnelShape(6, this.radius);
+      }
+      generateShrapnelShape(numPoints, radius) {
+        const points = [];
+        for (let i = 0; i < numPoints; i++) {
+          const angle = (2 * Math.PI / numPoints) * i;
+          const randRadius = radius * (0.6 + Math.random() * 0.7);
+          points.push({
+            x: Math.cos(angle) * randRadius,
+            y: Math.sin(angle) * randRadius
+          });
+        }
+        return points;
+      }
+      update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+      }
+      draw() {
+        ctx.fillStyle = this.colorSet.fill;
+        ctx.beginPath();
+        const pts = this.shapePoints;
+        ctx.moveTo(this.x + pts[0].x, this.y + pts[0].y);
+        for(let i = 1; i < pts.length; i++) {
+          ctx.lineTo(this.x + pts[i].x, this.y + pts[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        drawVector(this.x, this.y, this.vx, this.vy, this.colorSet.velocity);
+        drawVector(this.x, this.y, this.vx * this.mass, this.vy * this.mass, this.colorSet.momentum);
+      }
+      velocityMag() {
+        return Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+      }
+      momentumX() {
+        return this.mass * this.vx;
+      }
+      momentumY() {
+        return this.mass * this.vy;
+      }
+      momentumMag() {
+        return this.mass * this.velocityMag();
+      }
+    }
+
+    const VECTOR_SCALE = 6;
+
+    function drawVector(x, y, vx, vy, color) {
+      const endX = x + vx * VECTOR_SCALE;
+      const endY = y + vy * VECTOR_SCALE;
+
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      const angle = Math.atan2(vy, vx);
+      const headLength = 6;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6),
+                 endY - headLength * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6),
+                 endY - headLength * Math.sin(angle + Math.PI / 6));
+      ctx.lineTo(endX, endY);
+      ctx.fill();
+    }
+
+    function calcCenterOfMass() {
+      let totalMass = 0;
+      let sumX = 0;
+      let sumY = 0;
+      particles.forEach(p => {
+        totalMass += p.mass;
+        sumX += p.mass * p.x;
+        sumY += p.mass * p.y;
+      });
+      if(totalMass === 0) return {x: width/2, y: height/2};
+      return {x: sumX / totalMass, y: sumY / totalMass};
+    }
+
+    let initialMomentumX = 0;
+    let initialMomentumY = 0;
+
+    let challengeData = {};
+
+    function generateChallenge() {
+      const centerX = width / 2;
+      const centerY = height / 2;
+
+      let m1 = +(1 + Math.random()*1.5).toFixed(2);
+      let m2 = +(1 + Math.random()*1.5).toFixed(2);
+      let m3 = +(1 + Math.random()*1.5).toFixed(2);
+
+      let vx1 = +(Math.random()*100 - 50).toFixed(2);
+      let vy1 = +(Math.random()*100 - 50).toFixed(2);
+      let vx2 = +(Math.random()*100 - 50).toFixed(2);
+      let vy2 = +(Math.random()*100 - 50).toFixed(2);
+
+      let vx3 = (-(m1*vx1 + m2*vx2) / m3).toFixed(2);
+      let vy3 = (-(m1*vy1 + m2*vy2) / m3).toFixed(2);
+
+      challengeData = { m1, m2, m3, vx1, vy1, vx2, vy2, vx3, vy3, centerX, centerY };
+
+      document.getElementById("given-data").innerHTML = `
+        Particle 1: m = ${m1} kg, Vx = ${vx1} m/s, Vy = ${vy1} m/s<br>
+        Particle 2: m = ${m2} kg, Vx = ${vx2} m/s, Vy = ${vy2} m/s<br>
+        Particle 3: m = ${m3} kg, Vx = <em>?</em>, Vy = <em>?</em>
+      `;
+    }
+
+    // Keep only this initExplosion (using challengeData values)
+    function initExplosion() {
+      particles = [];
+      // For now, just use the correct vx3, vy3
+      const guessVx = parseFloat(challengeData.vx3);
+      const guessVy = parseFloat(challengeData.vy3);
+
+      particles.push(new Particle(challengeData.centerX, challengeData.centerY, challengeData.m1, challengeData.vx1, challengeData.vy1, 1, colors[0]));
+      particles.push(new Particle(challengeData.centerX, challengeData.centerY, challengeData.m2, challengeData.vx2, challengeData.vy2, 2, colors[1]));
+      particles.push(new Particle(challengeData.centerX, challengeData.centerY, challengeData.m3, guessVx, guessVy, 3, colors[2]));
+
+      initialMomentumX = particles.reduce((sum, p) => sum + p.momentumX(), 0);
+      initialMomentumY = particles.reduce((sum, p) => sum + p.momentumY(), 0);
+
+      clearMessage();
+    }
+
+    function clear() {
+      ctx.clearRect(0, 0, width, height);
+    }
+
+    let lastTime = null;
+
+    function getSpeedMultiplier() {
+      return slowMode ? 0.5 : 1;
+    }
+
+    function animate(time) {
+      if (!running || paused) return;
+      if (!lastTime) lastTime = time;
+
+      let dtRaw = (time - lastTime) / 1000;
+      let dt = Math.min(dtRaw, 0.05);
+      dt *= getSpeedMultiplier();
+
+      lastTime = time;
+
+      clear();
+
+      ctx.fillStyle = "#00c2ff";
+      ctx.beginPath();
+      ctx.arc(width/2, height/2, 6, 0, 2*Math.PI);
+      ctx.fill();
+
+      let outOfBounds = false;
+      for (const p of particles) {
+        p.update(dt);
+
+        if (
+          p.x < p.radius || p.x > width - p.radius ||
+          p.y < p.radius || p.y > height - p.radius
+        ) {
+          outOfBounds = true;
+          break;
+        }
+      }
+
+      if (outOfBounds) {
+        running = false;
+        showMessage("Simulation ended: particles reached boundary.");
+      }
+
+      particles.forEach(p => p.draw());
+
+      const com = calcCenterOfMass();
+      ctx.fillStyle = "#ffdd33";
+      ctx.shadowColor = "#ffdd33";
+      ctx.shadowBlur = 15;
+      ctx.beginPath();
+      ctx.arc(com.x, com.y, 10, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      updateStats();
+      animationId = requestAnimationFrame(animate);
+    }
+
+    function updateStats() {
+      const statsDiv = document.getElementById("stats");
+      statsDiv.innerHTML = "";
+
+      const totalMomentumX = particles.reduce((sum, p) => sum + p.momentumX(), 0);
+      const totalMomentumY = particles.reduce((sum, p) => sum + p.momentumY(), 0);
+      const momentumBeforeMag = Math.sqrt(initialMomentumX*initialMomentumX + initialMomentumY*initialMomentumY);
+      const momentumAfterMag = Math.sqrt(totalMomentumX*totalMomentumX + totalMomentumY*totalMomentumY);
+      const momentumDiff = momentumAfterMag - momentumBeforeMag;
+
+      const momentumDiv = document.createElement("div");
+      momentumDiv.classList.add("particle-stats");
+      momentumDiv.style.borderLeftColor = "#ffdd33";
+      momentumDiv.innerHTML = `
+        <h2 style="color: #ffdd33;">Conservation of Momentum</h2>
+        <div class="stat-row"><span>Initial Total Momentum:</span><span>${momentumBeforeMag.toFixed(2)}</span></div>
+        <div class="stat-row"><span>Current Total Momentum:</span><span>${momentumAfterMag.toFixed(2)}</span></div>
+        <div class="stat-row"><span>Difference:</span><span>${momentumDiff.toFixed(4)}</span></div>
+      `;
+      statsDiv.appendChild(momentumDiv);
+
+      particles.forEach(p => {
+        const particleDiv = document.createElement("div");
+        particleDiv.classList.add("particle-stats");
+        particleDiv.style.borderLeftColor = p.colorSet.accent;
+
+        particleDiv.innerHTML = `
+          <h2 style="color: ${p.colorSet.accent};">Particle ${p.id}</h2>
+          <div class="stat-row"><span>Mass (kg):</span><span>${p.mass.toFixed(2)}</span></div>
+          <div class="stat-row"><span>Velocity (m/s):</span><span>${p.velocityMag().toFixed(2)}</span></div>
+          <div class="stat-row"><span>Velocity x:</span><span>${p.vx.toFixed(2)}</span></div>
+          <div class="stat-row"><span>Velocity y:</span><span>${p.vy.toFixed(2)}</span></div>
+          <div class="stat-row"><span>Acceleration x:</span><span>${p.ax.toFixed(2)}</span></div>
+          <div class="stat-row"><span>Acceleration y:</span><span>${p.ay.toFixed(2)}</span></div>
+          <div class="stat-row"><span>Momentum x (kg·m/s):</span><span>${p.momentumX().toFixed(2)}</span></div>
+          <div class="stat-row"><span>Momentum y (kg·m/s):</span><span>${p.momentumY().toFixed(2)}</span></div>
+          <div class="stat-row"><span>Momentum magnitude:</span><span>${p.momentumMag().toFixed(2)}</span></div>
+        `;
+
+        statsDiv.appendChild(particleDiv);
+      });
+    }
+
+    function showMessage(text) {
+      const statsDiv = document.getElementById("stats");
+      const msg = document.createElement("div");
+      msg.style.color = "#ffdd33";
+      msg.style.textAlign = "center";
+      msg.style.width = "100%";
+      msg.style.marginTop = "10px";
+      msg.style.fontWeight = "bold";
+      msg.textContent = text;
+      statsDiv.appendChild(msg);
+    }
+
+    function clearMessage() {
+      const statsDiv = document.getElementById("stats");
+      [...statsDiv.childNodes].forEach(node => {
+        if (node.nodeType === 1 && node.classList.contains('particle-stats')) return;
+        statsDiv.removeChild(node);
+      });
+    }
+
+    const startBtn = document.getElementById("startBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const slowBtn = document.getElementById("slowBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    slowBtn.addEventListener("click", () => {
+      slowMode = !slowMode;
+      slowBtn.textContent = slowMode ? "Slow: ON" : "Slow: OFF";
+    });
+
+    startBtn.addEventListener("click", () => {
+      if (!running) {
+        initExplosion();
+        running = true;
+        paused = false;
+        lastTime = null;
+        animationId = requestAnimationFrame(animate);
+        pauseBtn.disabled = false;
+        startBtn.disabled = true;
+        clearMessage();
+      }
+    });
+
+    pauseBtn.addEventListener("click", () => {
+      if (!running) return;
+      paused = !paused;
+      pauseBtn.textContent = paused ? "Resume" : "Pause";
+      if (!paused) {
+        lastTime = null;
+        animationId = requestAnimationFrame(animate);
+      }
+    });
+
+    resetBtn.addEventListener("click", () => {
+      running = false;
+      paused = false;
+      cancelAnimationFrame(animationId);
+      clear();
+      particles = [];
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = "Pause";
+      slowBtn.textContent = slowMode ? "Slow: ON" : "Slow: OFF";
+
+      ctx.fillStyle = "#00c2ff";
+      ctx.beginPath();
+      ctx.arc(width/2, height/2, 6, 0, 2*Math.PI);
+      ctx.fill();
+
+      document.getElementById("stats").innerHTML = "";
+
+      // Generate new challenge each reset
+      generateChallenge();
+    });
+
+    // Initial origin point and challenge generation
+    ctx.fillStyle = "#00c2ff";
+    ctx.beginPath();
+    ctx.arc(width/2, height/2, 6, 0, 2*Math.PI);
+    ctx.fill();
+
+    generateChallenge();
+  </script>
+</body>
+</html>

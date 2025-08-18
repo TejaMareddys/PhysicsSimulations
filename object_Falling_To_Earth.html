@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vertical Rock Fall Simulation</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: black;
+    color: white;
+    font-family: sans-serif;
+    margin: 0;
+    padding: 10px;
+  }
+  canvas { background: #111; margin: 10px 0; }
+  button, input { margin: 5px; padding: 5px 10px; font-size: 16px; }
+  #results { margin-top: 10px; font-size: 18px; color: lightgreen; }
+</style>
+</head>
+<body>
+
+<h2>Vertical Rock Fall Simulation</h2>
+<div>
+  <label>Initial Height (m): </label>
+  <input type="number" id="heightInput" value="50000" min="0" max="100000">
+</div>
+<canvas id="simCanvas" width="600" height="400"></canvas>
+<div>
+  <button id="startBtn">Start</button>
+  <button id="pauseBtn">Pause</button>
+  <button id="resetBtn">Reset</button>
+</div>
+<h3>Distance from Earth's Surface over Time</h3>
+<canvas id="distanceChart" width="600" height="200"></canvas>
+<div id="results"></div>
+
+<script>
+const canvas = document.getElementById("simCanvas");
+const ctx = canvas.getContext("2d");
+
+// Constants
+const G = 6.674e-11;
+const M = 5.972e24;
+const R_earth = 6.371e6;
+
+// Simulation variables
+let h = 50000;
+let r = R_earth + h;
+let v = 0;
+let t = 0;
+
+// Physics timestep
+const dtPhysics = 0.001;
+const stepsPerFrame = 200;
+
+// Animation control
+let running = false;
+let animationId = null;
+
+// Chart setup
+const maxTime = 120;
+const distanceData = {
+  labels: Array.from({length: maxTime+1}, (_, i) => i),
+  datasets: [{
+    label: "Distance from surface (m)",
+    data: Array(maxTime+1).fill(null),
+    borderColor: "yellow",
+    backgroundColor: "rgba(255,255,0,0.2)",
+    showLine: true,
+    pointRadius: 3,
+    tension: 0
+  }]
+};
+
+const distanceChart = new Chart(document.getElementById('distanceChart'), {
+  type: 'line',
+  data: distanceData,
+  options: {
+    responsive: false,
+    animation: false,
+    scales: {
+      x: { title: { display: true, text: "Time (s)" }, min: 0, max: maxTime },
+      y: { title: { display: true, text: "Distance from surface (m)" }, min: 0, max: 50000 }
+    },
+    plugins: { legend: { display: false } }
+  }
+});
+
+
+const earthImg = new Image();
+earthImg.src = "https://upload.wikimedia.org/wikipedia/commons/9/97/The_Earth_seen_from_Apollo_17.jpg";
+
+function drawEarth() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const earthRadiusPx = 200;
+  const earthX = canvas.width / 2;
+  const earthY = canvas.height;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(earthX, earthY, earthRadiusPx, Math.PI, 0, false);
+  ctx.closePath();
+  ctx.clip();
+
+  ctx.drawImage(earthImg, earthX - earthRadiusPx, earthY - earthRadiusPx, earthRadiusPx * 2, earthRadiusPx * 2);
+  ctx.restore();
+}
+
+// Reset simulation
+function resetSimulation() {
+  h = parseFloat(document.getElementById('heightInput').value) || 50000;
+  r = R_earth + h;
+  v = 0;
+  t = 0;
+  distanceData.datasets[0].data.fill(null);
+  distanceChart.update();
+  drawEarth();
+  document.getElementById('results').innerHTML = "";
+}
+
+// Animation loop
+function animate() {
+  if (!running) return;
+
+  for (let i = 0; i < stepsPerFrame; i++) {
+    const a = -G*M/(r*r);
+    v += a * dtPhysics;
+    r += v * dtPhysics;
+    t += dtPhysics;
+  }
+
+  drawEarth();
+
+  const earthPx = 200;
+  const maxHeight = h; 
+  const scale = maxHeight / (canvas.height - earthPx - 20);
+  const rockY = canvas.height - earthPx - (r - R_earth)/scale;
+
+  ctx.beginPath();
+  ctx.arc(canvas.width/2, rockY, 8, 0, 2*Math.PI);
+  ctx.fillStyle = "red";
+  ctx.fill();
+
+  const timeIndex = Math.floor(t);
+  if (timeIndex <= maxTime && distanceData.datasets[0].data[timeIndex] === null) {
+    distanceData.datasets[0].data[timeIndex] = r - R_earth;
+    distanceChart.update();
+  }
+
+  if (r > R_earth) {
+    animationId = requestAnimationFrame(animate);
+  } else {
+    running = false;
+    document.getElementById('results').innerHTML = 
+      `Impact Time: ${t.toFixed(2)} s<br>Impact Velocity: ${v.toFixed(2)} m/s`;
+  }
+}
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (!running) {
+    running = true;
+    animate();
+  }
+});
+
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  running = false;
+  cancelAnimationFrame(animationId);
+  animationId = null;
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  running = false;
+  cancelAnimationFrame(animationId);
+  animationId = null;
+  resetSimulation();
+});
+
+
+earthImg.onload = () => {
+  resetSimulation();
+};
+</script>
+</body>
+</html>
